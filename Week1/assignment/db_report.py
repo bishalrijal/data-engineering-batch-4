@@ -1,14 +1,10 @@
-"""
-db_report.py
-────────────
-Connects to the ride_share database and prints the results of the three
-aggregation questions (Q6, Q7, Q8) from the Week 1 SQL assignment.
-"""
-
 import logging
 import os
 import psycopg2
 from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
