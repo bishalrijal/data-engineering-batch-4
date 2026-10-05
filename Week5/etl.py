@@ -10,8 +10,10 @@ from extract import (extract_driver,
                       extract_passenger,
                       extract_payment_method,
                       extract_promo_code,
-                      extract_trips,
-                      extract_lookup_dim)
+                      extract_trips_full,
+                      extract_trips_incremental,
+                      extract_lookup_dim,
+                      get_watermark)
 
 from transform import transform_trip
 
@@ -25,10 +27,13 @@ from load import (
     load_dim_driver
 )
 
+from quality import run_quality_check
+
 load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(levelname)s  %(message)s"
+    format="%(asctime)s  %(levelname)s %(filename)s:%(lineno)d %(message)s",
+    # filename='logs/etl_{date}_{run}.log'
 )
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,7 @@ DEST_DB_CONFIG = dict(
 
 # TODO: research on arg vs kwarg
 def main():
+    mode = 'FULL'
     src_conn = psycopg2.connect(**SOURCE_DB_CONFIG)
     dst_conn = psycopg2.connect(**DEST_DB_CONFIG)
 
@@ -71,10 +77,16 @@ def main():
     promo_code_data = extract_promo_code(src_conn)
     load_dim_promo_code(dst_conn, promo_code_data)
 
-    trip_data = extract_trips(src_conn)
+    watermark = get_watermark(dst_conn)
+
+    if mode == "INCREMENTAL":
+        trip_data = extract_trips_incremental(src_conn,watermark)
+    else:
+        trip_data = extract_trips_full(src_conn)
     lookups = extract_lookup_dim(dst_conn)
     print(lookups["driver"].get(2))
     fact_row = transform_trip(trip_data, lookups)
+    run_quality_check(fact_row)
     load_fact_trips(dst_conn,fact_row)
 
 if __name__ == '__main__':

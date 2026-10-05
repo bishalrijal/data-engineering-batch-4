@@ -3,10 +3,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def extract(conn,sql):
+def extract(conn,sql,params=None):
     try:
         with conn.cursor(cursor_factory =RealDictCursor ) as curr:
-            curr.execute(sql)
+            curr.execute(sql,params)
             rows = curr.fetchall()
             logger.info(f"Extracted {len(rows)} from the table")
         return rows
@@ -111,7 +111,36 @@ def extract_promo_code(conn):
     return extract(conn, extract_promo_code_sql)
 
 
-def extract_trips(conn):
+def extract_trips_incremental(conn, watermark):
+    extract_trip_sql = """
+      SELECT
+        t.trip_id,
+        t.driver_id,
+        t.passenger_id,
+        t.pickup_location_id,
+        t.dropoff_location_id,
+        t.payment_method_id,
+        t.promo_code_id,
+        t.base_fare,
+        t.tip_amount,
+        t.discount_amount,
+        t.surge_multiplier,
+        t.distance_km,
+        t.status,
+        t.requested_at,
+        t.completed_at,
+        t.driver_rating,
+        t.passenger_rating,
+        tc.cancelled_by          -- from trip_cancellations (NULL for non-cancelled)
+    FROM  trips t
+    LEFT JOIN trip_cancellations tc ON t.trip_id = tc.trip_id
+    WHERE t.requested_at > %(watermark)s
+    ORDER BY t.requested_at
+        """
+    return extract(conn,extract_trip_sql,watermark)
+
+
+def extract_trips_full(conn):
     extract_trip_sql = """
       SELECT
         t.trip_id,
@@ -162,4 +191,23 @@ def extract_lookup_dim(conn):
         lookup["date"] = {r[0]: True for r in curr.fetchall()}
     return lookup
 
+
+def get_watermark(conn):
+    """
+    Return the most recent requested_at already loaded in the warehouse.
+    Falls back to 2000-01-01 on an empty fact table so the first run
+    behaves as a full load without special-casing.
+    """
+    with conn.cursor(cursor_factory =RealDictCursor) as cur:
+        cur.execute("""
+            SELECT COALESCE(
+                MAX(requested_at),
+                '2000-01-01'::TIMESTAMP
+            ) watermark
+            FROM fact_trips
+        """)
+        watermark = cur.fetchone()
+    
+    logger.info(f"Watermark: {watermark}")
+    return watermark
 

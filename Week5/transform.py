@@ -78,6 +78,7 @@ def transform_trip(trip_data,lookups):
             "dropoff_location_key": dropoff_location_key,
             "payment_method_key":   payment_method_key,
             "promo_code_key":       promo_code_key,
+            "status"   :            row["status"],
             "base_fare":            base_fare,
             "tip_amount":           tip_amount,
             "discount_amount":      discount_amount,
