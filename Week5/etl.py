@@ -3,7 +3,13 @@ import logging
 
 import os 
 from dotenv import load_dotenv
+import argparse
+import time 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Rides ETL pipeline config")
+    parser.add_argument("--full-reload", action="store_true",help="Truncate warehouse and reload all data")
+    return parser.parse_args()
 
 from extract import (extract_driver,
                       extract_location,
@@ -58,10 +64,12 @@ DEST_DB_CONFIG = dict(
 
 # TODO: research on arg vs kwarg
 def main():
-    mode = 'FULL'
+    args = parse_args()
+    mode = 'FULL' if args.full_reload else 'INCREMENTAL'
     src_conn = psycopg2.connect(**SOURCE_DB_CONFIG)
     dst_conn = psycopg2.connect(**DEST_DB_CONFIG)
 
+    time0 = time.time()
     driver_data = extract_driver(src_conn)
     load_dim_driver(dst_conn, driver_data)
 
@@ -78,11 +86,17 @@ def main():
     load_dim_promo_code(dst_conn, promo_code_data)
 
     watermark = get_watermark(dst_conn)
+    time1 = time.time()
+    logger.info(f"Dimension table runs completed on {time1-time0:.3f}s")
 
+    time0 = time.time()
     if mode == "INCREMENTAL":
         trip_data = extract_trips_incremental(src_conn,watermark)
     else:
         trip_data = extract_trips_full(src_conn)
+    time1 = time.time()
+    logger.info(f"trips extraction runs completed on {time1-time0:.3f}s")
+
     lookups = extract_lookup_dim(dst_conn)
     print(lookups["driver"].get(2))
     fact_row = transform_trip(trip_data, lookups)

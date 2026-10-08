@@ -1,0 +1,44 @@
+-- =============================================================================
+-- 10_silver.sql — Week 5 Assignment, Part 3
+-- Name:
+--
+-- bronze -> silver. run_elt.py runs this whole file as ONE transaction on every
+-- run. The current batch id is available as:
+--     current_setting('elt.batch_id')::BIGINT
+--
+-- Strategy: rebuild silver from scratch every run. Start the file with
+--     TRUNCATE silver.drivers, silver.passengers, ..., silver.trips, silver.trips_quarantine;
+-- then INSERT ... SELECT from bronze. Running it twice gives the same result.
+--
+-- Every trip (its latest copy) ends up in exactly one place: silver.trips or
+-- silver.trips_quarantine.
+-- =============================================================================
+
+
+-- ── S1 Dimensions ────────────────────────────────────────────────────────────
+-- TODO: for each dimension, take the LATEST bronze copy per natural key
+-- (ROW_NUMBER() OVER (PARTITION BY <id> ORDER BY _ingested_at DESC)), trim and
+-- lower-case the coded values, cast to real types, and load silver.<table>.
+-- silver.locations gets its region here.
+
+
+-- ── S2 Trips: type, clean, validate ──────────────────────────────────────────
+-- TODO: a simple way is a temp table built from three CTEs:
+--
+--   latest     latest bronze copy per trip_id
+--   typed      trimmed, lower-cased, cast with ops.try_numeric / ops.try_timestamp
+--   checked    + a reject_reason column from a CASE: the first rule broken, or NULL
+--
+-- Rules (these cover every bad row in partner_feed_batch.sql):
+--   - a value that should be a number / timestamp but doesn't cast
+--   - status not in completed / cancelled / no_show
+--   - driver, passenger or a location not in silver
+--   - completed_at earlier than requested_at
+--   - negative fare components, surge_multiplier < 1.00
+--
+-- Then load silver.trips from the rows with no reject_reason (with cancelled_by
+-- joined in from the latest bronze.trip_cancellations row, trimmed and lower-cased),
+-- and silver.trips_quarantine from the rest.
+--
+-- fare_amount = ROUND(base_fare * surge_multiplier + tip_amount - discount_amount, 2)
+-- On NUMERIC this is exact. Compare with what Part 1 needed in pandas.
